@@ -1,5 +1,5 @@
 # 0.18.1
-A few bugs I failed to catch last round. Sorry about that.
+Another really big update which started out as some simple bug fixes, but surprisingly non breaking.
 
 - Fixed request retries with retryRequests/retryFailed deadlocking the route's rate limit bucket.
 	- The retry was enqueued into the same bucket that was blocked waiting for the retry to finish, so the request promise never settled and every later request on that route hung forever. Retries now free the bucket before re-queueing.
