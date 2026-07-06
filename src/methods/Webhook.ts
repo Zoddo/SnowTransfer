@@ -1,8 +1,8 @@
 import Endpoints = require("../Endpoints");
 import Constants = require("../Constants");
 
-import type { RequestHandler as RH } from "../RequestHandler";
-import type { SnowTransferOptions } from "../Types";
+import type { RequestHandler } from "../RequestHandler";
+import type { FileInput, SnowTransferOptions } from "../Types";
 
 import {
 	type RESTDeleteAPIWebhookResult,
@@ -34,12 +34,9 @@ import {
 	MessageFlags
 } from "discord-api-types/v10";
 
-import type { Readable } from "node:stream";
-
 /**
  * Methods for handling webhook interactions
  * @since 0.1.0
- * @protected
  */
 class WebhookMethods {
 	/**
@@ -51,7 +48,7 @@ class WebhookMethods {
 	 * @param requestHandler request handler that calls the rest api
 	 * @param options Options for the SnowTransfer instance
 	 */
-	public constructor(public readonly requestHandler: RH, public options: SnowTransferOptions) {}
+	public constructor(public readonly requestHandler: RequestHandler, public options: SnowTransferOptions) {}
 
 	/**
 	 * Create a new Webhook
@@ -231,12 +228,12 @@ class WebhookMethods {
 	 * const client = new SnowTransfer()
 	 * client.webhook.executeWebhook("webhook Id", "webhook token", { content: "Hi from my webhook" })
 	 */
-	public async executeWebhook(webhookId: string, token: string, data: RESTPostAPIWebhookWithTokenJSONBody & { files?: Array<{ name: string; file: Buffer | Readable | ReadableStream; }> }, options?: RESTPostAPIWebhookWithTokenQuery & { wait?: false, }): Promise<RESTPostAPIWebhookWithTokenResult>;
-	public async executeWebhook(webhookId: string, token: string, data: RESTPostAPIWebhookWithTokenJSONBody & { files?: Array<{ name: string; file: Buffer | Readable | ReadableStream; }> }, options: RESTPostAPIWebhookWithTokenQuery & { wait: true, }): Promise<RESTPostAPIWebhookWithTokenWaitResult>;
-	public async executeWebhook(webhookId: string, token: string, data: RESTPostAPIWebhookWithTokenJSONBody & { files?: Array<{ name: string; file: Buffer | Readable | ReadableStream; }> }, options?: RESTPostAPIWebhookWithTokenQuery): Promise<RESTPostAPIWebhookWithTokenResult | RESTPostAPIWebhookWithTokenWaitResult> {
-		if (typeof data !== "string" && !data.content && !data.embeds && !data.components && !data.files && !data.poll) throw new Error("Missing content, embeds, components, files, or poll");
+	public async executeWebhook(webhookId: string, token: string, data: RESTPostAPIWebhookWithTokenJSONBody & { files?: Array<{ name: string; file: FileInput; }> }, options?: RESTPostAPIWebhookWithTokenQuery & { wait?: false, }): Promise<RESTPostAPIWebhookWithTokenResult>;
+	public async executeWebhook(webhookId: string, token: string, data: RESTPostAPIWebhookWithTokenJSONBody & { files?: Array<{ name: string; file: FileInput; }> }, options: RESTPostAPIWebhookWithTokenQuery & { wait: true, }): Promise<RESTPostAPIWebhookWithTokenWaitResult>;
+	public async executeWebhook(webhookId: string, token: string, data: RESTPostAPIWebhookWithTokenJSONBody & { files?: Array<{ name: string; file: FileInput; }> }, options?: RESTPostAPIWebhookWithTokenQuery): Promise<RESTPostAPIWebhookWithTokenResult | RESTPostAPIWebhookWithTokenWaitResult> {
+		if (typeof data !== "string" && !data.content && !data.embeds?.length && !data.components?.length && !data.files?.length && !data.poll) throw new Error("Missing content, embeds, components, files, or poll");
 		if (typeof data === "string") data = { content: data };
-		const payload = { ...data };
+		const payload = Constants.cloneUserInput(data);
 		const opts = { ...options };
 
 		if (
@@ -312,10 +309,10 @@ class WebhookMethods {
 	 * const client = new SnowTransfer()
 	 * const message = await client.webhook.editWebhookMessage("webhook Id", "webhook token", "message Id", { content: "New content" })
 	 */
-	public async editWebhookMessage(webhookId: string, token: string, messageId: string, data: RESTPatchAPIWebhookWithTokenMessageJSONBody & { thread_id?: string; files?: Array<{ name: string; file: Buffer | Readable | ReadableStream; }> }): Promise<RESTPatchAPIWebhookWithTokenMessageResult> {
+	public async editWebhookMessage(webhookId: string, token: string, messageId: string, data: RESTPatchAPIWebhookWithTokenMessageJSONBody & { thread_id?: string; files?: Array<{ name: string; file: FileInput; }> }): Promise<RESTPatchAPIWebhookWithTokenMessageResult> {
 		let threadId: string | undefined = undefined;
 		if (data.thread_id) threadId = data.thread_id;
-		const payload = { ...data };
+		const payload = Constants.cloneUserInput(data);
 		delete payload.thread_id;
 
 		payload.allowed_mentions ??= this.options.allowed_mentions;

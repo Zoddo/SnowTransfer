@@ -1,3 +1,32 @@
+# 0.18.1
+A few bugs I failed to catch last round. Sorry about that.
+
+- Fixed request retries with retryRequests/retryFailed deadlocking the route's rate limit bucket.
+	- The retry was enqueued into the same bucket that was blocked waiting for the retry to finish, so the request promise never settled and every later request on that route hung forever. Retries now free the bucket before re-queueing.
+	- Retries also now preserve the rawResponse flag. Previously a retried InviteMethods#getInviteTargetUsers would explode because it got parsed JSON instead of a Response.
+- Fixed the baseURL option being silently ignored by the RequestHandler. It's also exposed on the SnowTransfer options now, along with a custom fetch implementation.
+- Requests without a body no longer send the literal string "undefined" as the JSON body (with a Content-Type to match). Discord tolerated it, but yuck.
+- DiscordAPIError#code is now the actual Discord error code (e.g. 10008 Unknown Message) parsed from JSON error bodies instead of always being 4000. Validation error details are still included in the message.
+- Bucket cooldowns now only wait on the counters that are actually exhausted. Previously the wait was the max across all counters, so e.g. reaction routes with a 250ms reset could stall for up to a second on the global counter's window.
+- 400 responses are no longer retried when retryRequests is enabled. Retrying a malformed request was never going to go differently.
+- The hourly bucket sweep no longer deletes buckets that still have queued calls or are mid-cooldown, which could briefly let two buckets for the same route run in parallel.
+- ChannelMethods#createVoiceMessage now uses the configured fetch implementation for the CDN upload, actually checks that the upload succeeded, and uses MessageFlags.IsVoiceMessage instead of a magic number.
+- Query params/data objects passed to methods are no longer mutated (appendQuery deleted undefined keys from your object, createInteractionResponse wrote allowed_mentions into your data).
+	- This is now backed by Constants#cloneUserInput, which copies payloads before the library writes to them: plain objects and arrays are deep cloned, while Buffers, Blobs and streams are intentionally shared by reference (copying those is either wasteful or impossible). Your payloads stay reusable across calls and retries.
+- The file property of files now also accepts a factory function returning (or resolving to) a file, and Blob/File are now properly advertised in the method signatures (the form handler always supported them).
+	- Streams are single use - once a request consumed one, sending the same payload again would upload nothing. Pass file: () => fs.createReadStream(path) and the factory is called once per materialization, so reusing the payload just works. The new FileInput and SendableFile types document this right where your editor's hover can see it.
+- Fixed multipart uploads crashing with "Received non-Uint8Array chunk" when given a Readable that emits strings (e.g. Readable.from(["text"])). Stream contents are now collected through Blob, which is fine with string and Buffer chunks alike.
+- WebhookMethods#executeWebhook now treats empty embeds/components/files arrays as missing, matching ChannelMethods#createMessage.
+- Fixed the JSDoc example for AssetsMethods#createGuildSticker passing tags as an array - it's a comma separated string.
+- strings added to forms without a filename param route through the overload for strings instead of wrapping them in a Blob
+- Tokens are only considered pre-prefixed if they start with "Bot " or "Bearer " (with the space).
+- Fixed the StateMachine onEnter error message naming the wrong state.
+- Added a test suite (node:test, no new dependencies, `npm test`) covering the ratelimiter/request handler core, request transformations, client-side validation, and pure functions. Deliberately no fixture tests of endpoint wrappers - those only test the mock.
+- Removed dep on broken tsup.
+	- This also allows the emitted code to be more readable which eliminates the "need" for a sourcemap.
+	- Also fixes needing to use funny naming schemes for imports of classes across different files lest tsup minification for the dts and js would start naming the base class something else entirely and wrap it instead of.. yknow. Using the name the dev defined even though it'd be valid in that context.
+- Removed @protected tag from classes so that they'd be visible in the docs by default.
+
 # 0.18.0
 First entry in this changelog. This is a major one - possibly the biggest one save for the js -> ts rewrite. We'll start with the most interesting/impactful.
 

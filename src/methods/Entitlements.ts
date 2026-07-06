@@ -1,4 +1,4 @@
-import type { RequestHandler as RH } from "../RequestHandler";
+import type { RequestHandler } from "../RequestHandler";
 
 import Endpoints = require("../Endpoints");
 
@@ -14,7 +14,6 @@ import type {
 /**
  * Methods for interacting with Entitlements
  * @since 0.13.0
- * @protected
  */
 class EntitlementMethods {
 	/**
@@ -25,7 +24,7 @@ class EntitlementMethods {
 	 * You can access the methods listed via `client.entitlement.method` where `client` is an initialized SnowTransfer instance
 	 * @param requestHandler request handler that calls the rest api
 	 */
-	public constructor(public readonly requestHandler: RH) {}
+	public constructor(public readonly requestHandler: RequestHandler) {}
 
 	/**
 	 * Returns all entitlements for a given app, active and expired

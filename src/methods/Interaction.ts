@@ -1,9 +1,9 @@
 import Endpoints = require("../Endpoints");
 import Constants = require("../Constants");
 
-import type { RequestHandler as RH } from "../RequestHandler";
+import type { RequestHandler } from "../RequestHandler";
 import type WHM = require("./Webhook");
-import type { SnowTransferOptions } from "../Types";
+import type { FileInput, SnowTransferOptions } from "../Types";
 
 import {
 	InteractionResponseType,
@@ -40,12 +40,9 @@ import {
 	type RESTPutAPIApplicationGuildCommandsResult
 } from "discord-api-types/v10";
 
-import type { Readable } from "node:stream";
-
 /**
  * Methods for interacting with slash command specific endpoints
  * @since 0.3.0
- * @protected
  */
 class InteractionMethods {
 	/**
@@ -57,7 +54,7 @@ class InteractionMethods {
 	 * @param requestHandler request handler that calls the rest api
 	 * @param webhooks WebhookMethods class that handles webhook related stuff
 	 */
-	public constructor(public readonly requestHandler: RH, public readonly webhooks: WHM, public options: SnowTransferOptions) {}
+	public constructor(public readonly requestHandler: RequestHandler, public readonly webhooks: WHM, public options: SnowTransferOptions) {}
 
 	/**
 	 * Fetch all global commands for your application
@@ -308,14 +305,15 @@ class InteractionMethods {
 	 * const client = new SnowTransfer() // This endpoint does not require a Bot token. The interaction token alone will suffice
 	 * client.interaction.createInteractionResponse("interactionId", "token", { type: 4, data: { content: "Hello World" } })
 	 */
-	public async createInteractionResponse(interactionId: string, token: string, data: RESTPostAPIInteractionCallbackJSONBody & { files?: Array<{ name: string; file: Buffer | Readable | ReadableStream; }> }): Promise<RESTPostAPIInteractionCallbackResult> {
+	public async createInteractionResponse(interactionId: string, token: string, data: RESTPostAPIInteractionCallbackJSONBody & { files?: Array<{ name: string; file: FileInput; }> }): Promise<RESTPostAPIInteractionCallbackResult> {
+		const payload = Constants.cloneUserInput(data);
 		if ((
-			data.type === InteractionResponseType.ChannelMessageWithSource ||
-			data.type === InteractionResponseType.UpdateMessage
-		) && data.data) data.data.allowed_mentions ??= this.options.allowed_mentions;
+			payload.type === InteractionResponseType.ChannelMessageWithSource ||
+			payload.type === InteractionResponseType.UpdateMessage
+		) && payload.data) payload.data.allowed_mentions ??= this.options.allowed_mentions;
 
-		if (data.files) return this.requestHandler.request(Endpoints.INTERACTION_CALLBACK(interactionId, token), {}, "post", "multipart", await Constants.standardMultipartHandler(data as Parameters<typeof Constants["standardMultipartHandler"]>["0"]));
-		else return this.requestHandler.request(Endpoints.INTERACTION_CALLBACK(interactionId, token), {}, "post", "json", data);
+		if (payload.files) return this.requestHandler.request(Endpoints.INTERACTION_CALLBACK(interactionId, token), {}, "post", "multipart", await Constants.standardMultipartHandler(payload as Parameters<typeof Constants["standardMultipartHandler"]>["0"]));
+		else return this.requestHandler.request(Endpoints.INTERACTION_CALLBACK(interactionId, token), {}, "post", "json", payload);
 	}
 
 	/**
@@ -345,7 +343,7 @@ class InteractionMethods {
 	 * const client = new SnowTransfer() // This endpoint does not require a Bot token. The interaction token alone will suffice
 	 * const message = await client.interaction.editOriginalInteractionResponse("appId", "token", { content: "The world said hello back" })
 	 */
-	public async editOriginalInteractionResponse(appId: string, token: string, data: RESTPatchAPIInteractionOriginalResponseJSONBody & { files?: Array<{ name: string; file: Buffer | Readable | ReadableStream }> }): Promise<RESTPatchAPIInteractionOriginalResponseResult> {
+	public async editOriginalInteractionResponse(appId: string, token: string, data: RESTPatchAPIInteractionOriginalResponseJSONBody & { files?: Array<{ name: string; file: FileInput }> }): Promise<RESTPatchAPIInteractionOriginalResponseResult> {
 		return this.webhooks.editWebhookMessage(appId, token, "@original", data);
 	}
 
@@ -376,7 +374,7 @@ class InteractionMethods {
 	 * const client = new SnowTransfer() // This endpoint does not require a Bot token. The interaction token alone will suffice
 	 * const message = await client.interaction.createFollowupMessage("appId", "token", { content: "The pacer gram fitness test-" })
 	 */
-	public async createFollowupMessage(appId: string, token: string, data: RESTPostAPIInteractionFollowupJSONBody & { files?: Array<{ name: string; file: Buffer | Readable | ReadableStream; }> }): Promise<RESTPostAPIInteractionFollowupResult> {
+	public async createFollowupMessage(appId: string, token: string, data: RESTPostAPIInteractionFollowupJSONBody & { files?: Array<{ name: string; file: FileInput; }> }): Promise<RESTPostAPIInteractionFollowupResult> {
 		// wait is always true for interactions and should not be supplied as it will throw an error if the query string is present
 		return this.webhooks.executeWebhook(appId, token, data) as unknown as Promise<RESTPostAPIInteractionFollowupResult>;
 	}
@@ -410,7 +408,7 @@ class InteractionMethods {
 	 * const client = new SnowTransfer() // This endpoint does not require a Bot token. The interaction token alone will suffice
 	 * const message = await client.interaction.editFollowupMessage("appId", "token", "messageId", { content: "-is a multistage aerobic capacity test" })
 	 */
-	public async editFollowupMessage(appId: string, token: string, messageId: string, data: RESTPatchAPIInteractionFollowupJSONBody & { files?: Array<{ name: string; file: Buffer | Readable | ReadableStream; }> }): Promise<RESTPatchAPIInteractionFollowupResult> {
+	public async editFollowupMessage(appId: string, token: string, messageId: string, data: RESTPatchAPIInteractionFollowupJSONBody & { files?: Array<{ name: string; file: FileInput; }> }): Promise<RESTPatchAPIInteractionFollowupResult> {
 		return this.webhooks.editWebhookMessage(appId, token, messageId, data);
 	}
 

@@ -1,4 +1,4 @@
-import type { RequestHandler as RH } from "../RequestHandler";
+import type { RequestHandler } from "../RequestHandler";
 
 import Endpoints = require("../Endpoints");
 import Constants = require("../Constants");
@@ -62,14 +62,11 @@ import {
 	MessageFlags
 } from "discord-api-types/v10";
 
-import type { RESTPostAPIAttachmentsRefreshURLsResult, SnowTransferOptions } from "../Types";
-
-import type { Readable } from "node:stream";
+import type { FileInput, RESTPostAPIAttachmentsRefreshURLsResult, SnowTransferOptions } from "../Types";
 
 /**
  * Methods for interacting with Channels and Messages
  * @since 0.1.0
- * @protected
  */
 class ChannelMethods {
 	/**
@@ -81,7 +78,7 @@ class ChannelMethods {
 	 * @param requestHandler request handler that calls the rest api
 	 * @param options Options for the SnowTransfer instance
 	 */
-	public constructor(public readonly requestHandler: RH, public options: SnowTransferOptions) {}
+	public constructor(public readonly requestHandler: RequestHandler, public options: SnowTransferOptions) {}
 
 	/**
 	 * Get a channel via Id
@@ -176,8 +173,9 @@ class ChannelMethods {
 	 * }
 	 * const messages = await client.channel.getChannelMessages("channel id", options)
 	 */
-	public async getChannelMessages(channelId: string, options: RESTGetAPIChannelMessagesQuery = { limit: 50 }): Promise<RESTGetAPIChannelMessagesResult> {
-		const query = { ...options };
+	public async getChannelMessages(channelId: string, options?: RESTGetAPIChannelMessagesQuery): Promise<RESTGetAPIChannelMessagesResult> {
+		const query = { limit: 50, ...options };
+
 		if (query.around) {
 			delete query.before;
 			delete query.after;
@@ -188,7 +186,11 @@ class ChannelMethods {
 			delete query.before;
 			delete query.around;
 		}
-		if (query.limit !== undefined && (query.limit < Constants.GET_CHANNEL_MESSAGES_MIN_RESULTS || query.limit > Constants.GET_CHANNEL_MESSAGES_MAX_RESULTS)) throw new RangeError(`Amount of messages that may be requested has to be between ${Constants.GET_CHANNEL_MESSAGES_MIN_RESULTS} and ${Constants.GET_CHANNEL_MESSAGES_MAX_RESULTS}`);
+
+		if (
+			query.limit < Constants.GET_CHANNEL_MESSAGES_MIN_RESULTS ||
+			query.limit > Constants.GET_CHANNEL_MESSAGES_MAX_RESULTS
+		) throw new RangeError(`Amount of messages that may be requested has to be between ${Constants.GET_CHANNEL_MESSAGES_MIN_RESULTS} and ${Constants.GET_CHANNEL_MESSAGES_MAX_RESULTS}`);
 		return this.requestHandler.request(Endpoints.CHANNEL_MESSAGES(channelId), query, "get", "json");
 	}
 
@@ -257,7 +259,7 @@ class ChannelMethods {
 	 * const fileData = fs.readFileSync("nice_picture.png") // You should probably use fs.promises.readFile, since it is asynchronous, synchronous methods block the thread.
 	 * client.channel.createMessage("channel id", { content: "This is a nice picture", files: [{ name: "Optional_Filename.png", file: fileData }] })
 	 */
-	public async createMessage(channelId: string, data: string | RESTPostAPIChannelMessageJSONBody & { files?: Array<{ name: string; file: Buffer | Readable | ReadableStream; }> }): Promise<RESTPostAPIChannelMessageResult> {
+	public async createMessage(channelId: string, data: string | RESTPostAPIChannelMessageJSONBody & { files?: Array<{ name: string; file: FileInput; }> }): Promise<RESTPostAPIChannelMessageResult> {
 		if (
 			typeof data !== "string" &&
 			!data.content &&
@@ -269,7 +271,7 @@ class ChannelMethods {
 			!data.poll
 		) throw new Error("Missing content, message_reference type 1, embeds, sticker_ids, components, files, or poll");
 		if (typeof data === "string") data = { content: data };
-		const payload = { ...data };
+		const payload = Constants.cloneUserInput(data);
 
 		if (
 			(payload.content || payload.embeds) &&
@@ -322,7 +324,8 @@ class ChannelMethods {
 		}).then(d => d.attachments[0]);
 
 		// @ts-expect-error A Buffer is compatible as BodyInit. Trust. upload file to cdn
-		await fetch(upload_url, { method: "PUT", body: data });
+		const uploaded = await this.requestHandler.options.fetch(upload_url, { method: "PUT", body: data });
+		if (!uploaded.ok) throw new Error(`Uploading the voice message audio failed with status ${uploaded.status}: ${await uploaded.text().catch(() => "")}`);
 
 		// Actually send the voice message
 		return this.requestHandler.request(Endpoints.CHANNEL_MESSAGES(channelId), {}, "post", "json", {
@@ -333,7 +336,7 @@ class ChannelMethods {
 				duration_secs: audioDurationSeconds,
 				waveform
 			}],
-			flags: 1 << 13 // voice message flag
+			flags: MessageFlags.IsVoiceMessage
 		});
 	}
 
@@ -511,9 +514,9 @@ class ChannelMethods {
 	 * const message = await client.channel.createMessage("channel id", "pong")
 	 * client.channel.editMessage("channel id", message.id, `pong ${Date.now() - time}ms`)
 	 */
-	public async editMessage(channelId: string, messageId: string, data: string | RESTPatchAPIChannelMessageJSONBody & { files?: Array<{ name: string; file: Buffer | Readable | ReadableStream; }> }): Promise<RESTPatchAPIChannelMessageResult> {
+	public async editMessage(channelId: string, messageId: string, data: string | RESTPatchAPIChannelMessageJSONBody & { files?: Array<{ name: string; file: FileInput; }> }): Promise<RESTPatchAPIChannelMessageResult> {
 		if (typeof data === "string") data = { content: data };
-		const payload = { ...data };
+		const payload = Constants.cloneUserInput(data);
 
 		if (
 			(payload.content || payload.embeds) &&
@@ -643,9 +646,9 @@ class ChannelMethods {
 	 * const client = new SnowTransfer("TOKEN")
 	 * const invite = await client.channel.createChannelInvite("channel id", { max_age: 0, max_uses: 0, unique: true })
 	 */
-	public async createChannelInvite(channelId: string, data: RESTPostAPIChannelInviteJSONBody & { target_users?: Array<string>; role_ids?: Array<string> } = { max_age: 86400, max_uses: 0, temporary: false, unique: false }, reason?: string): Promise<RESTPostAPIChannelInviteResult> {
-		const targetUsers = data?.target_users;
-		const payload = { ...data };
+	public async createChannelInvite(channelId: string, data?: RESTPostAPIChannelInviteJSONBody & { target_users?: Array<string>; role_ids?: Array<string> }, reason?: string): Promise<RESTPostAPIChannelInviteResult> {
+		const payload: Exclude<typeof data, undefined> = { max_age: 86400, max_uses: 0, temporary: false, unique: false, ...data };
+		const targetUsers = payload?.target_users;
 
 		if (targetUsers?.length) {
 			delete payload.target_users;
@@ -1126,7 +1129,6 @@ class ChannelMethods {
 }
 
 export = ChannelMethods;
-
 
 // Wolke >>
 // https://www.youtube.com/watch?v=LIlZCmETvsY have a weird video to distract yourself from the problems that will come upon ya

@@ -1,6 +1,6 @@
 import Endpoints = require("../Endpoints");
 
-import type { RequestHandler as RH } from "../RequestHandler";
+import type { RequestHandler } from "../RequestHandler";
 
 import type {
 	RESTDeleteAPICurrentUserGuildResult,
@@ -20,7 +20,6 @@ import type {
 /**
  * Methods for interacting with users
  * @since 0.1.0
- * @protected
  */
 class UserMethods {
 	/**
@@ -31,7 +30,7 @@ class UserMethods {
 	 * You can access the methods listed via `client.user.method`, where `client` is an initialized SnowTransfer instance
 	 * @param requestHandler
 	 */
-	public constructor(public readonly requestHandler: RH) {}
+	public constructor(public readonly requestHandler: RequestHandler) {}
 
 	/**
 	 * Get information about the CurrentUser

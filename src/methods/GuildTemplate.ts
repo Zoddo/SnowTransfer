@@ -1,6 +1,6 @@
 import Endpoints = require("../Endpoints");
 
-import type { RequestHandler as RH } from "../RequestHandler";
+import type { RequestHandler } from "../RequestHandler";
 
 import type {
 	RESTDeleteAPIGuildTemplateResult,
@@ -16,7 +16,6 @@ import type {
 /**
  * Methods for interacting with Guild Templates
  * @since 0.3.0
- * @protected
  */
 class GuildTemplateMethods {
 	/**
@@ -27,7 +26,7 @@ class GuildTemplateMethods {
 	 * You can access the methods listed via `client.guildTemplate.method`, where `client` is an initialized SnowTransfer instance
 	 * @param requestHandler request handler that calls the rest api
 	 */
-	public constructor(public readonly requestHandler: RH) {}
+	public constructor(public readonly requestHandler: RequestHandler) {}
 
 	/**
 	 * Get a guild template by code

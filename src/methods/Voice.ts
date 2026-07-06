@@ -1,13 +1,12 @@
 import Endpoints = require("../Endpoints");
 
-import type { RequestHandler as RH } from "../RequestHandler";
+import type { RequestHandler } from "../RequestHandler";
 
 import type { RESTGetAPIVoiceRegionsResult, APIVoiceState } from "discord-api-types/v10";
 
 /**
  * Methods for interacting with voice
  * @since 0.1.0
- * @protected
  */
 class VoiceMethods {
 	/**
@@ -18,7 +17,7 @@ class VoiceMethods {
 	 * You can access the methods listed via `client.voice.method`, where `client` is an initialized SnowTransfer instance
 	 * @param requestHandler request handler that calls the rest api
 	 */
-	public constructor(public readonly requestHandler: RH) {}
+	public constructor(public readonly requestHandler: RequestHandler) {}
 
 	/**
 	 * Get currently available voice regions that can be used when creating servers

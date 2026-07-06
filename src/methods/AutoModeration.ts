@@ -1,6 +1,6 @@
 import Endpoints = require("../Endpoints");
 import Constants = require("../Constants");
-import type { RequestHandler as RH } from "../RequestHandler";
+import type { RequestHandler } from "../RequestHandler";
 
 import type {
 	RESTGetAPIAutoModerationRulesResult,
@@ -15,7 +15,6 @@ import type {
 /**
  * Methods for interacting with guild auto moderation
  * @since 0.7.0
- * @protected
  */
 class AutoModerationMethods {
 	/**
@@ -26,7 +25,7 @@ class AutoModerationMethods {
 	 * You can access the methods listed via `client.autoMod.method`, where `client` is an initialized SnowTransfer instance
 	 * @param requestHandler request handler that calls the rest api
 	 */
-	public constructor(public readonly requestHandler: RH) {}
+	public constructor(public readonly requestHandler: RequestHandler) {}
 
 	/**
 	 * Get all of the auto moderation rules from a guild

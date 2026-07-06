@@ -22,7 +22,6 @@ import type { SnowTransferOptions } from "./Types";
 
 /**
  * @since 0.1.0
- * @protected
  */
 class SnowTransfer {
 	/** Options for this SnowTransfer instance */
@@ -73,16 +72,18 @@ class SnowTransfer {
 	 */
 	public constructor(token?: string, options?: Partial<SnowTransferOptions>) {
 		if (typeof token === "string" && token === "") throw new Error("Missing token");
-		if (token && (!token.startsWith("Bot") && !token.startsWith("Bearer"))) token = `Bot ${token}`;
-		this.options = { baseHost: Endpoints.BASE_HOST, allowed_mentions: undefined, bypassBuckets: false, retryRequests: false, retryLimit: Constants.DEFAULT_RETRY_LIMIT, ...options };
+		if (token && (!token.startsWith("Bot ") && !token.startsWith("Bearer "))) token = `Bot ${token}`;
+		this.options = { baseHost: Endpoints.BASE_HOST, baseURL: Endpoints.BASE_URL, fetch: globalThis.fetch, allowed_mentions: undefined, bypassBuckets: false, retryRequests: false, retryLimit: Constants.DEFAULT_RETRY_LIMIT, ...options };
 		this.token = token;
 		this.ratelimiter = new Ratelimiter();
 		this.requestHandler = new RequestHandler(this.ratelimiter, {
 			token: this.token,
 			baseHost: this.options.baseHost,
+			baseURL: this.options.baseURL,
 			bypassBuckets: this.options.bypassBuckets,
 			retryFailed: this.options.retryRequests,
-			retryLimit: this.options.retryLimit
+			retryLimit: this.options.retryLimit,
+			fetch: this.options.fetch
 		});
 		this.channel = new ChannelMethods(this.requestHandler, this.options);
 		this.user = new UserMethods(this.requestHandler);

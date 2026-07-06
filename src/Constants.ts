@@ -1,5 +1,7 @@
 import { Readable } from "node:stream";
 
+import type { FileInput } from "./Types";
+
 const Constants = {
 	REST_API_VERSION: 10 as const,
 	GET_CHANNEL_MESSAGES_MIN_RESULTS: 1 as const,
@@ -11,13 +13,36 @@ const Constants = {
 	BULK_DELETE_MESSAGES_MIN: 2 as const,
 	BULK_DELETE_MESSAGES_MAX: 100 as const,
 	OK_STATUS_CODES: new Set([200, 201, 204, 304]),
-	DO_NOT_RETRY_STATUS_CODES: new Set([401, 403, 404, 405, 411, 413]),
+	DO_NOT_RETRY_STATUS_CODES: new Set([400, 401, 403, 404, 405, 411, 413]),
 	DEFAULT_RETRY_LIMIT: 3,
 	GLOBAL_REQUESTS_PER_SECOND: 50,
-	async standardMultipartHandler(data: { files: Array<{ name: string; file: Buffer | Blob | File | Readable | ReadableStream }>; data?: any; }): Promise<FormData> {
+	/**
+	 * Deep clones arrays and plain objects, passing everything else (Buffers, Blobs, streams, class instances) through by reference.
+	 *
+	 * Used to copy user supplied payloads before the library writes to them (defaulting allowed_mentions, deleting keys, etc),
+	 * so the caller's objects stay reusable across calls and are unchanged by retries. Exotic values are intentionally shared,
+	 * since they are either wasteful (Buffer) or impossible (streams) to copy.
+	 * @since 0.18.1
+	 * @param value Value to clone
+	 */
+	cloneUserInput<T>(value: T): T {
+		if (Array.isArray(value)) return value.map(v => Constants.cloneUserInput(v)) as T;
+		if (value !== null && typeof value === "object") {
+			const proto = Object.getPrototypeOf(value);
+			if (proto === Object.prototype || proto === null) {
+				const cloned: Record<string, any> = {};
+				for (const [key, v] of Object.entries(value)) {
+					cloned[key] = Constants.cloneUserInput(v);
+				}
+				return cloned as T;
+			}
+		}
+		return value;
+	},
+	async standardMultipartHandler(data: { files: Array<{ name: string; file: FileInput }>; data?: any; }): Promise<FormData> {
 		const form = new FormData();
-		const payload = { ...data };
-		payload.files = payload.files?.map(f => ({ ...f }));
+		// Cloned so the deletes below can't spend the caller's payload. File contents are shared by reference, not copied
+		const payload = Constants.cloneUserInput(data);
 
 		if (payload.files && Array.isArray(payload.files) && payload.files.every(f => !!f.name && !!f.file)) {
 			let index = 0;
@@ -35,15 +60,17 @@ const Constants = {
 		form.append("payload_json", JSON.stringify(payload));
 		return form;
 	},
-	async standardAddToFormHandler(form: FormData, name: string, value: string | Buffer | Blob | File | Readable | ReadableStream, filename?: string): Promise<void> {
-		// @ts-expect-error It's a Buffer. If the user experiences an error, then let it be known that I don't care
-		if (value instanceof Buffer || typeof value === "string") form.append(name, new Blob([value]), filename);
+	async standardAddToFormHandler(form: FormData, name: string, value: string | FileInput, filename?: string): Promise<void> {
+		// Factories produce a fresh file per materialization, so payloads containing streams can be reused across calls
+		if (typeof value === "function") value = await value();
+		if (typeof value === "string" && !filename) form.append(name, value);
+		// @ts-expect-error It's a Buffer and it works. If node changes the backend to not accept a plain Buffer, then we can talk
+		else if (value instanceof Buffer || typeof value === "string") form.append(name, new Blob([value]), filename);
 		else if (value instanceof Blob || value instanceof File) form.append(name, value, filename);
-		else if (value instanceof Readable || value instanceof ReadableStream) {
-			// @ts-expect-error ReadableStream is not assignable to ReadableStream???
-			const blob = await new Response(value instanceof ReadableStream ? value : Readable.toWeb(value)).blob();
-			form.set(name, blob, filename);
-		} else throw new Error(`Don't know how to add ${value?.constructor?.name ?? typeof value} to form`);
+		// Node Readables may emit string or Buffer chunks; Blob accepts both as parts, unlike Response which only takes bytes
+		else if (value instanceof Readable) form.set(name, new Blob(await value.toArray()), filename);
+		else if (value instanceof ReadableStream) form.set(name, await new Response(value).blob(), filename);
+		else throw new Error(`Don't know how to add ${value?.constructor?.name ?? typeof value} to form`);
 	},
 	reasonHeader(reason?: string): { "X-Audit-Log-Reason"?: string } {
 		return reason ? { "X-Audit-Log-Reason": reason } : {};

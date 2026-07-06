@@ -1,9 +1,9 @@
-import type { Readable } from "node:stream";
 
 import Constants = require("../Constants");
 import Endpoints = require("../Endpoints");
 
-import type { RequestHandler as RH } from "../RequestHandler";
+import type { RequestHandler } from "../RequestHandler";
+import type { FileInput } from "../Types";
 
 import type {
 	RESTDeleteAPIGuildEmojiResult,
@@ -33,7 +33,6 @@ import type {
 /**
  * Methods for interacting with assets like emojis and stickers for a guild/app
  * @since 0.13.0
- * @protected
  */
 class AssetsMethods {
 	/**
@@ -44,7 +43,7 @@ class AssetsMethods {
 	 * You can access the methods listed via `client.assets.method`, where `client` is an initialized SnowTransfer instance
 	 * @param requestHandler request handler that calls the rest api
 	 */
-	public constructor(public readonly requestHandler: RH) {}
+	public constructor(public readonly requestHandler: RequestHandler) {}
 
 	/**
 	 * Get a list of emojis of a guild
@@ -222,11 +221,11 @@ class AssetsMethods {
 	 * 	name: "niceSticker",
 	 * 	file: fileData,
 	 * 	description: "A very nice sticker",
-	 * 	tags: ["nice", "sticker"],
+	 * 	tags: "nice,sticker",
 	 * }
 	 * const sticker = await client.assets.createGuildSticker("guild id", stickerData)
 	 */
-	public async createGuildSticker(guildId: string, data: RESTPostAPIGuildStickerFormDataBody & { file: Buffer | Blob | File | Readable | ReadableStream; }, reason?: string): Promise<RESTPostAPIGuildStickerResult> {
+	public async createGuildSticker(guildId: string, data: RESTPostAPIGuildStickerFormDataBody & { file: FileInput; }, reason?: string): Promise<RESTPostAPIGuildStickerResult> {
 		const form = new FormData();
 
 		for (const [key, value] of Object.entries(data)) {

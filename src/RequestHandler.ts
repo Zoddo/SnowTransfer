@@ -30,7 +30,6 @@ const disallowedBodyMethods = new Set(["head", "get", "delete"]);
 
 /**
  * @since 0.3.0
- * @protected
  */
 export class DiscordAPIError extends Error {
 	public method: string;
@@ -221,7 +220,7 @@ export class LeakyCounter implements Counter {
 		else return 0;
 	}
 
-	public responseReceived(): void {}
+	public responseReceived(): void { /* Doesnt need impl */ }
 
 	public applyCount(limit: number | null, remaining: number, resetAfter: number): void {
 		if (limit != null) this.limit = limit;
@@ -323,7 +322,8 @@ export class Bucket {
 		this.sm.defineState("cooldown", {
 			onEnter: [
 				() => {
-					this.sm.doTransitionLater("reset", Math.max(...this.counters.map(c => c.timeUntilReset())));
+					const blocked = this.counters.filter(c => !c.canTake());
+					this.sm.doTransitionLater("reset", Math.max(...blocked.map(c => c.timeUntilReset()), 1));
 				}
 			],
 			onLeave: [],
@@ -399,7 +399,6 @@ export class Bucket {
 /**
  * Ratelimiter used for handling the ratelimits imposed by the rest api
  * @since 0.1.0
- * @protected
  */
 export class Ratelimiter {
 	/**
@@ -422,7 +421,7 @@ export class Ratelimiter {
 		setInterval(() => {
 			for (const [key, value] of this.buckets.entries()) {
 				const counter = value.counters[0];
-				if (counter.hasReset()) this.buckets.delete(key);
+				if (value.sm.currentStateName === "ready" && value.calls.length === 0 && counter.hasReset()) this.buckets.delete(key);
 			}
 		}, 1*60*60*1000).unref();
 	}
@@ -498,14 +497,13 @@ export type RequestHandlerOptions = {
 		"User-Agent": string;
 		[header: string]: string | undefined;
 	},
-	fetch: typeof fetch
+	fetch: typeof globalThis.fetch
 }
 
 
 /**
  * Request Handler class
  * @since 0.1.0
- * @protected
  */
 export class RequestHandler extends EventEmitter<HandlerEvents> {
 	public options: RequestHandlerOptions;
@@ -533,7 +531,7 @@ export class RequestHandler extends EventEmitter<HandlerEvents> {
 		};
 		if (options?.token) this.options.headers.Authorization = options.token;
 
-		this.apiURL = this.options.baseHost + Endpoints.BASE_URL;
+		this.apiURL = this.options.baseHost + this.options.baseURL;
 		this.latency = 500;
 	}
 
@@ -554,7 +552,7 @@ export class RequestHandler extends EventEmitter<HandlerEvents> {
 	public request(endpoint: string, params: Record<string, any> | undefined, method: HTTPMethod, dataType: "multipart", data?: FormData, extraHeaders?: Record<string, string>, retries?: number, rawResponse?: boolean): Promise<any>
 	public request(endpoint: string, params: Record<string, any> | undefined, method: HTTPMethod, dataType: "json" | "multipart", data?: any, extraHeaders?: Record<string, string>, retries?: number, rawResponse?: true): Promise<Response>
 	public request(endpoint: string, params: Record<string, any> = {}, method: HTTPMethod, dataType: "json" | "multipart", data?: any, extraHeaders?: Record<string, string>, retries = this.options.retryLimit, rawResponse = false): Promise<any> {
-		const stack = new Error().stack as string;
+		const stack = new Error("SnowTransfer dummy Error to capture before processTicksAndRejections").stack as string;
 		return new Promise(async (resolve, reject) => {
 			const fn = async (bkt?: Bucket | undefined) => {
 				const reqId = nodeCrypto.randomBytes(20).toString("hex");
@@ -583,8 +581,8 @@ export class RequestHandler extends EventEmitter<HandlerEvents> {
 					if (bkt) this._applyRatelimitHeaders(bkt, response.headers);
 
 					if (response.status && !Constants.OK_STATUS_CODES.has(response.status) && response.status !== 429) {
-						if (this.options.retryFailed && !Constants.DO_NOT_RETRY_STATUS_CODES.has(response.status) && retries !== 0) return this.request(endpoint, params, method, dataType, data, extraHeaders, retries - 1).then(resolve).catch(reject);
-						throw new DiscordAPIError({ message: await response.text() }, request, response);
+						if (this.options.retryFailed && !Constants.DO_NOT_RETRY_STATUS_CODES.has(response.status) && retries !== 0) return resolve(this.request(endpoint, params, method, dataType, data, extraHeaders, retries - 1, rawResponse ? true : undefined));
+						throw new DiscordAPIError(parseErrorBody(await response.text()), request, response);
 					}
 
 					if (response.status === 429) {
@@ -597,7 +595,7 @@ export class RequestHandler extends EventEmitter<HandlerEvents> {
 							route: this.ratelimiter.routify(endpoint, method.toUpperCase())
 						});
 
-						if (this.options.retryFailed && retries !== 0) return this.request(endpoint, params, method, dataType, data, extraHeaders, 0).then(resolve).catch(reject);
+						if (this.options.retryFailed && retries !== 0) return resolve(this.request(endpoint, params, method, dataType, data, extraHeaders, 0, rawResponse ? true : undefined));
 
 						throw new DiscordAPIError({ message: b.message, code: b.code ?? 429 }, request, response);
 					}
@@ -661,7 +659,7 @@ export class RequestHandler extends EventEmitter<HandlerEvents> {
 		const headers = { ...this.options.headers, ...extraHeaders } as Record<string, string>;
 
 		let body: string | undefined = undefined;
-		if (!disallowedBodyMethods.has(method)) {
+		if (data != null && !disallowedBodyMethods.has(method)) {
 			if (typeof data === "object") body = JSON.stringify(data);
 			else body = String(data);
 
@@ -696,11 +694,30 @@ export class RequestHandler extends EventEmitter<HandlerEvents> {
 }
 
 function appendQuery(query: Record<string, any>): string {
+	const filtered: Record<string, any> = {};
 	let count = 0;
 	for (const [key, value] of Object.entries(query)) {
-		if (value == undefined) delete query[key];
-		else count++;
+		if (value != undefined) {
+			filtered[key] = value;
+			count++;
+		}
 	}
 
-	return count > 0 ? `?${new URLSearchParams(query).toString()}` : "";
+	return count > 0 ? `?${new URLSearchParams(filtered).toString()}` : "";
+}
+
+/**
+ * Try to pull message/code out of a Discord JSON error body so DiscordAPIError.code is usable.
+ * Falls back to the raw text if the body isn't JSON.
+ */
+function parseErrorBody(text: string): { message?: string; code?: number; } {
+	try {
+		const body = JSON.parse(text);
+		let message: string | undefined = body.message ?? text;
+		// Keep the detailed validation errors visible like the raw text used to be
+		if (body.message && body.errors) message = `${body.message}\n${util.inspect(body.errors, { depth: Infinity })}`;
+		return { message, code: body.code };
+	} catch {
+		return { message: text };
+	}
 }

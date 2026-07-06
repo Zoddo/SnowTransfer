@@ -51,13 +51,14 @@ class StateMachine extends EventEmitter<StateMachineEvents> {
 	 * @param name The name of the state.
 	 * @param cbs Callbacks for points during transitions relating to this state as well as transitions to other states.
 	 */
-	public defineState(name: string, cbs: { onEnter: SMState["onEnter"], onLeave: SMState["onLeave"], transitions: Map<string, SMTransition> } = { onEnter: [], onLeave: [], transitions: new Map() }): this {
+	public defineState(name: string, cbs?: { onEnter: SMState["onEnter"], onLeave: SMState["onLeave"], transitions: Map<string, SMTransition> }): this {
+		const options: Exclude<typeof cbs, undefined> = { onEnter: [], onLeave: [], transitions: new Map(), ...cbs };
 		this.guardEditable();
 		if (this.states.has(name)) throw new Error(`attempt to redefine state ${name}, please edit it instead`);
 		this.states.set(name, {
-			onEnter: cbs.onEnter,
-			onLeave: cbs.onLeave,
-			transitions: cbs.transitions
+			onEnter: options.onEnter,
+			onLeave: options.onLeave,
+			transitions: options.transitions
 		});
 		return this;
 	}
@@ -173,7 +174,7 @@ class StateMachine extends EventEmitter<StateMachineEvents> {
 				cb(event);
 			} catch (e) {
 				this.debug();
-				throw new Error(`onEnter callback for state ${from} (during transition ${this.currentStateName} --${event}--> ${transition.destination})`, {cause: e});
+				throw new Error(`onEnter callback for state ${transition.destination} (during transition ${from} --${event}--> ${transition.destination})`, {cause: e});
 			}
 		}
 	}
