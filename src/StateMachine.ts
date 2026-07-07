@@ -15,6 +15,10 @@ class StateMachine extends EventEmitter<StateMachineEvents> {
 	private editable = true;
 	private readonly deferredTransitionCreators: Array<() => unknown> = [];
 	private readonly history: Array<SMHistory> = [];
+	/** Transitions requested while another transition was still running. Drained in order once the running transition completes. */
+	private readonly pendingTransitions: Array<{ event: string; args: Array<any> }> = [];
+	/** Whether a transition is currently being executed, making new transition requests queue instead of nesting. */
+	private transitioning = false;
 
 	/**
 	 * Create a new StateMachine
@@ -132,12 +136,37 @@ class StateMachine extends EventEmitter<StateMachineEvents> {
 	 * Trigger an event to do a transition from the current state to another as defined previously.
 	 *
 	 * Will throw an Error if there is no transition from the current state to another based off the event.
+	 *
+	 * If called while another transition is still running (from an onLeave/onTransition/onEnter callback or
+	 * something those callbacks synchronously invoke), the transition is queued and runs once the current one
+	 * has fully completed, instead of nesting. Nested execution used to corrupt the enter sequence: the outer
+	 * transition would re-emit "enter" for whatever state the nested transition landed in, re-running that
+	 * state's onEnter callbacks and cancelling doTransitionLater timers that were still supposed to be pending.
 	 * @since 0.16.0
 	 * @param event The event that occurred.
 	 * @param args Arguments to pass to the callback of the transition's onTransition functions if any.
 	 */
 	public doTransition(event: string, ...args: any[]): void {
 		this.guardNotEditable();
+		this.pendingTransitions.push({ event, args });
+		if (this.transitioning) return; // the drain loop below picks it up once the current transition has fully completed
+		this.transitioning = true;
+		try {
+			while (this.pendingTransitions.length) {
+				const next = this.pendingTransitions.shift()!;
+				this._transition(next.event, next.args);
+			}
+		} finally {
+			this.transitioning = false;
+			this.pendingTransitions.length = 0; // if a transition threw, queued followers must not leak into an unrelated later call
+		}
+	}
+
+	/**
+	 * Runs a single transition to completion: onLeave, state change, onTransition, "enter", onEnter.
+	 * Only ever called from doTransition's drain loop so transitions cannot nest.
+	 */
+	private _transition(event: string, args: Array<any>): void {
 		const from = this.currentStateName;
 		const currentState = this.states.get(this.currentStateName)!;
 		const transition = currentState.transitions.get(event);
