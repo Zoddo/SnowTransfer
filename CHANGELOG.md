@@ -1,3 +1,7 @@
+# 0.19.0
+Idk why I didn't make 0.18.1 this version number. Anyways, the StateMachine now queues doTransition calls so that ones pushed on the same tick dont go in a confusing order.
+i.e. doTransition from inside of a transition callback.
+
 # 0.18.1
 Another really big update which started out as some simple bug fixes, but surprisingly non breaking.
 
